@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bilinovel-downloader/downloader"
 	"bilinovel-downloader/downloader/bilinovel"
 	"bilinovel-downloader/epub"
 	"bilinovel-downloader/model"
@@ -27,10 +28,12 @@ var downloadCmd = &cobra.Command{
 }
 
 type downloadCmdArgs struct {
-	NovelId    int `validate:"required"`
-	VolumeId   int `validate:"required"`
-	outputPath string
-	outputType string
+	NovelId     int `validate:"required"`
+	VolumeId    int `validate:"required"`
+	outputPath  string
+	outputType  string
+	headless    bool
+	concurrency int
 }
 
 var (
@@ -42,11 +45,16 @@ func init() {
 	downloadCmd.Flags().IntVarP(&downloadArgs.VolumeId, "volume-id", "v", 0, "volume id")
 	downloadCmd.Flags().StringVarP(&downloadArgs.outputPath, "output-path", "o", "novels", "output path")
 	downloadCmd.Flags().StringVarP(&downloadArgs.outputType, "output-type", "t", "epub", "output type, epub or text")
+	downloadCmd.Flags().BoolVar(&downloadArgs.headless, "headless", true, "headless mode")
+	downloadCmd.Flags().IntVar(&downloadArgs.concurrency, "concurrency", 3, "concurrency of downloading volumes")
 	RootCmd.AddCommand(downloadCmd)
 }
 
 func runDownloadNovel() error {
-	downloader, err := bilinovel.New()
+	downloader, err := bilinovel.New(bilinovel.BilinovelNewOption{
+		Headless:    downloadArgs.headless,
+		Concurrency: downloadArgs.concurrency,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create downloader: %v", err)
 	}
@@ -63,15 +71,9 @@ func runDownloadNovel() error {
 
 	if downloadArgs.VolumeId == 0 {
 		// 下载整本小说
-		novel, err := downloader.GetNovel(downloadArgs.NovelId, true)
+		err := downloadNovel(downloader, downloadArgs.NovelId)
 		if err != nil {
 			return fmt.Errorf("failed to get novel: %v", err)
-		}
-		for _, volume := range novel.Volumes {
-			err = downloadVolume(downloader, volume.Id)
-			if err != nil {
-				return fmt.Errorf("failed to download volume: %v", err)
-			}
 		}
 	} else {
 		// 下载单卷
@@ -84,7 +86,59 @@ func runDownloadNovel() error {
 	return nil
 }
 
-func downloadVolume(downloader model.Downloader, volumeId int) error {
+func downloadNovel(downloader downloader.Downloader, novelId int) error {
+	novelInfo, err := downloader.GetNovel(novelId, true, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get novel info: %w", err)
+	}
+	skipVolumes := make([]int, 0)
+	for _, volume := range novelInfo.Volumes {
+		jsonPath := filepath.Join(downloadArgs.outputPath, fmt.Sprintf("volume-%d-%d.json", downloadArgs.NovelId, volume.Id))
+		err = os.MkdirAll(filepath.Dir(jsonPath), 0755)
+		if err != nil {
+			return fmt.Errorf("failed to create directory: %v", err)
+		}
+		_, err = os.Stat(jsonPath)
+		if err == nil {
+			// 已经下载
+			skipVolumes = append(skipVolumes, volume.Id)
+		}
+	}
+	novel, err := downloader.GetNovel(novelId, false, skipVolumes)
+	if err != nil {
+		return fmt.Errorf("failed to download novel: %w", err)
+	}
+	for _, volume := range novel.Volumes {
+		jsonPath := filepath.Join(downloadArgs.outputPath, fmt.Sprintf("volume-%d-%d.json", downloadArgs.NovelId, volume.Id))
+		err = os.MkdirAll(filepath.Dir(jsonPath), 0755)
+		if err != nil {
+			return fmt.Errorf("failed to create directory: %v", err)
+		}
+		jsonFile, err := os.Create(jsonPath)
+		if err != nil {
+			return fmt.Errorf("failed to create json file: %v", err)
+		}
+		err = json.NewEncoder(jsonFile).Encode(volume)
+		if err != nil {
+			return fmt.Errorf("failed to encode json file: %v", err)
+		}
+		switch downloadArgs.outputType {
+		case "epub":
+			err = epub.PackVolumeToEpub(volume, downloadArgs.outputPath, downloader.GetStyleCSS(), downloader.GetExtraFiles())
+			if err != nil {
+				return fmt.Errorf("failed to pack volume: %v", err)
+			}
+		case "text":
+			err = text.PackVolumeToText(volume, downloadArgs.outputPath)
+			if err != nil {
+				return fmt.Errorf("failed to pack volume: %v", err)
+			}
+		}
+	}
+	return nil
+}
+
+func downloadVolume(downloader downloader.Downloader, volumeId int) error {
 	jsonPath := filepath.Join(downloadArgs.outputPath, fmt.Sprintf("volume-%d-%d.json", downloadArgs.NovelId, volumeId))
 	err := os.MkdirAll(filepath.Dir(jsonPath), 0755)
 	if err != nil {

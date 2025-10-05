@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "download",
+      "name": "novel",
       "type": "go",
       "request": "launch",
       "mode": "auto",
@@ -10,9 +10,22 @@
       "args": [
         "download",
         "-n",
-        "2321",
-        "-v",
-        "162759"
+        "2727",
+        "--concurrency",
+        "5"
+      ]
+    },
+    {
+      "name": "volume",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}",
+      "args": [
+        "download",
+        "-n=2727",
+        "-v=150098",
+        "--headless=false"
       ]
     }
   ]

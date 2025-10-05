@@ -1,6 +1,14 @@
 package model
 
-import "encoding/xml"
+import (
+	"encoding/xml"
+)
+
+type ExtraFile struct {
+	Data         []byte
+	Path         string
+	ManifestItem ManifestItem
+}
 
 type DublinCoreMetadata struct {
 	XMLName xml.Name `xml:"metadata"`
