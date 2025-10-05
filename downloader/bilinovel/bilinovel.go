@@ -4,7 +4,6 @@ import (
 	"bilinovel-downloader/model"
 	"bilinovel-downloader/utils"
 	"bytes"
-	"context"
 	"crypto/sha256"
 	_ "embed"
 	"fmt"
@@ -16,12 +15,10 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	mapper "github.com/bestnite/font-mapper"
-	"github.com/chromedp/cdproto/network"
-	"github.com/chromedp/chromedp"
+	"github.com/playwright-community/playwright-go"
 )
 
 //go:embed read.ttf
@@ -36,10 +33,9 @@ type Bilinovel struct {
 	restyClient *utils.RestyClient
 
 	// 浏览器实例复用
-	allocCtx      context.Context
-	allocCancel   context.CancelFunc
-	browserCtx    context.Context
-	browserCancel context.CancelFunc
+	browser        playwright.Browser
+	browserContext playwright.BrowserContext
+	page           playwright.Page
 }
 
 func New() (*Bilinovel, error) {
@@ -74,46 +70,41 @@ func (b *Bilinovel) GetExtraFiles() []model.ExtraFile {
 
 // initBrowser 初始化浏览器实例
 func (b *Bilinovel) initBrowser() error {
-	// 创建chromedp选项
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("disable-dev-shm-usage", true),
-		chromedp.Flag("disable-extensions", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.Flag("disable-background-timer-throttling", true),
-		chromedp.Flag("disable-backgrounding-occluded-windows", true),
-		chromedp.Flag("disable-renderer-backgrounding", true),
-	)
-
-	var err error
-	b.allocCtx, b.allocCancel = chromedp.NewExecAllocator(context.Background(), opts...)
-	b.browserCtx, b.browserCancel = chromedp.NewContext(b.allocCtx)
-
-	// 预热浏览器 - 导航到空白页
-	err = chromedp.Run(b.browserCtx, chromedp.Navigate("about:blank"))
+	pw, err := playwright.Run()
 	if err != nil {
-		b.closeBrowser()
-		return fmt.Errorf("failed to initialize browser: %v", err)
+		return fmt.Errorf("could not start playwright: %w", err)
+	}
+	b.browser, err = pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
+		Headless: playwright.Bool(false),
+	})
+	if err != nil {
+		return fmt.Errorf("could not launch browser: %w", err)
+	}
+
+	b.browserContext, err = b.browser.NewContext()
+	if err != nil {
+		return fmt.Errorf("could not create browser context: %w", err)
+	}
+
+	b.page, err = b.browserContext.NewPage()
+	if err != nil {
+		return fmt.Errorf("could not create page: %w", err)
 	}
 
 	log.Println("Browser initialized successfully")
 	return nil
 }
 
-// closeBrowser 关闭浏览器实例
-func (b *Bilinovel) closeBrowser() {
-	if b.browserCancel != nil {
-		b.browserCancel()
-	}
-	if b.allocCancel != nil {
-		b.allocCancel()
-	}
-}
-
-// Close 关闭下载器时清理资源
+// Close 清理资源
 func (b *Bilinovel) Close() error {
-	b.closeBrowser()
+	if b.browser != nil {
+		if err := b.browser.Close(); err != nil {
+			log.Printf("could not close browser: %v", err)
+		}
+		b.browser = nil
+		b.browserContext = nil
+		b.page = nil
+	}
 	return nil
 }
 
@@ -354,7 +345,7 @@ func (b *Bilinovel) getChapterByPage(chapter *model.Chapter, page int) (bool, er
 
 	html := resp.Body()
 	// 解决乱序问题
-	resortedHtml, err := b.processContentWithChromedp(string(html))
+	resortedHtml, err := b.processContentWithPlaywright(string(html))
 	if err != nil {
 		return false, fmt.Errorf("failed to process html: %w", err)
 	}
@@ -402,6 +393,7 @@ func (b *Bilinovel) getChapterByPage(chapter *model.Chapter, page int) (bool, er
 			imageFilename := fmt.Sprintf("%x%s", string(imageHash[:]), path.Ext(imgUrl))
 			s.SetAttr("src", imageFilename)
 			s.SetAttr("alt", imgUrl)
+			s.RemoveAttr("class")
 			img, err := b.getImg(imgUrl)
 			if err != nil {
 				return
@@ -415,6 +407,19 @@ func (b *Bilinovel) getChapterByPage(chapter *model.Chapter, page int) (bool, er
 			chapter.Content.Images[imageFilename] = img
 		})
 	}
+
+	doc.Find("*").Each(func(i int, s *goquery.Selection) {
+		if len(s.Nodes) > 0 && len(s.Nodes[0].Attr) > 0 {
+			// 遍历元素的所有属性
+			for _, attr := range s.Nodes[0].Attr {
+				// 3. 检查属性名是否以 "data-k" 开头，且属性值是否为空
+				if strings.HasPrefix(attr.Key, "data-k") {
+					// 4. 如果满足条件，就移除这个属性
+					s.RemoveAttr(attr.Key)
+				}
+			}
+		}
+	})
 
 	htmlStr, err := content.Html()
 	if err != nil {
@@ -439,8 +444,8 @@ func (b *Bilinovel) getImg(url string) ([]byte, error) {
 	return resp.Body(), nil
 }
 
-// processContentWithChromedp 使用复用的浏览器实例处理内容
-func (b *Bilinovel) processContentWithChromedp(htmlContent string) (string, error) {
+// processContentWithPlaywright 使用复用的浏览器实例处理内容
+func (b *Bilinovel) processContentWithPlaywright(htmlContent string) (string, error) {
 	tempFile, err := os.CreateTemp("", "bilinovel-temp-*.html")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
@@ -454,103 +459,63 @@ func (b *Bilinovel) processContentWithChromedp(htmlContent string) (string, erro
 	tempFile.Close()
 	tempFilePath := tempFile.Name()
 
-	// 为当前任务创建子上下文
-	ctx, cancel := context.WithTimeout(b.browserCtx, 30*time.Second)
-	defer cancel()
+	_, err = b.page.ExpectResponse(func(url string) bool {
+		return strings.Contains(url, "chapterlog.js")
+	}, func() error {
+		_, err = b.page.Goto("file://" + filepath.ToSlash(tempFilePath))
+		if err != nil {
+			return fmt.Errorf("could not navigate to file: %w", err)
+		}
+		return nil
+	}, playwright.PageExpectResponseOptions{
+		Timeout: playwright.Float(5000),
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to wait for network request finish")
+	}
 
-	var processedHTML string
+	err = b.page.Locator("#acontent").WaitFor(playwright.LocatorWaitForOptions{
+		State: playwright.WaitForSelectorStateVisible,
+	})
+	if err != nil {
+		return "", fmt.Errorf("could not wait for #acontent: %w", err)
+	}
 
-	// 设置网络事件监听
-	networkEventChan := make(chan bool, 1)
-	var requestID string
-
-	// 执行处理任务
-	err = chromedp.Run(ctx,
-		network.Enable(),
-
-		// 设置网络事件监听器
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			chromedp.ListenTarget(ctx, func(ev interface{}) {
-				switch ev := ev.(type) {
-				case *network.EventRequestWillBeSent:
-					if strings.Contains(ev.Request.URL, "chapterlog.js") {
-						requestID = ev.RequestID.String()
-					}
-				case *network.EventLoadingFinished:
-					if ev.RequestID.String() == requestID && requestID != "" {
-						select {
-						case networkEventChan <- true:
-						default:
-						}
-					}
+	// 遍历所有 #acontent 的子元素, 通过 window.getComputedStyle().display 检测是否是 none, 如果是 none 则从页面删除这个元素
+	result, err := b.page.Evaluate(`
+		(function() {
+			const acontent = document.getElementById('acontent');
+			if (!acontent) {
+				return 'acontent element not found';
+			}
+			
+			let removedCount = 0;
+			const elements = acontent.querySelectorAll('*');
+			
+			// 从后往前遍历，避免删除元素时影响索引
+			for (let i = elements.length - 1; i >= 0; i--) {
+				const element = elements[i];
+				const computedStyle = window.getComputedStyle(element);
+				
+				if (computedStyle.display === 'none') {
+					element.remove();
+					removedCount++;
 				}
-			})
-			return nil
-		}),
-
-		// 导航到本地文件
-		chromedp.Navigate("file://"+filepath.ToSlash(tempFilePath)),
-
-		// 等待页面加载完成
-		chromedp.WaitVisible(`#acontent`, chromedp.ByID),
-
-		// 等待外部脚本加载或超时
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			select {
-			case <-networkEventChan:
-				log.Println("External script loaded successfully")
-			case <-time.After(10 * time.Second):
-				log.Println("Timeout waiting for external script, continuing anyway")
-			case <-ctx.Done():
-				return ctx.Err()
 			}
-			return nil
-		}),
-
-		// 遍历所有 #acontent 的子元素, 通过 window.getComputedStyle().display 检测是否是 none, 如果是 none 则从页面删除这个元素
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			// 执行JavaScript来移除display:none的元素
-			var result string
-			err := chromedp.Evaluate(`
-				(function() {
-					const acontent = document.getElementById('acontent');
-					if (!acontent) {
-						return 'acontent element not found';
-					}
-					
-					let removedCount = 0;
-					const elements = acontent.querySelectorAll('*');
-					
-					// 从后往前遍历，避免删除元素时影响索引
-					for (let i = elements.length - 1; i >= 0; i--) {
-						const element = elements[i];
-						const computedStyle = window.getComputedStyle(element);
-						
-						if (computedStyle.display === 'none') {
-							element.remove();
-							removedCount++;
-						}
-					}
-					
-					return 'Removed ' + removedCount + ' hidden elements';
-				})()
-			`, &result).Do(ctx)
-
-			if err != nil {
-				log.Printf("Failed to remove hidden elements: %v", err)
-				return err
-			}
-
-			log.Printf("Hidden elements removal result: %s", result)
-			return nil
-		}),
-
-		// 获取页面的HTML代码
-		chromedp.OuterHTML("html", &processedHTML, chromedp.ByQuery),
-	)
+			
+			return 'Removed ' + removedCount + ' hidden elements';
+		})()
+	`)
 
 	if err != nil {
-		return "", fmt.Errorf("chromedp execution failed: %w", err)
+		return "", fmt.Errorf("failed to remove hidden elements: %w", err)
+	}
+
+	log.Printf("Hidden elements removal result: %s", result)
+
+	processedHTML, err := b.page.Content()
+	if err != nil {
+		return "", fmt.Errorf("could not get page content: %w", err)
 	}
 
 	return processedHTML, nil
