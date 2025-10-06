@@ -8,10 +8,12 @@ import (
 	"bilinovel-downloader/text"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 
+	"github.com/playwright-community/playwright-go"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +22,16 @@ var downloadCmd = &cobra.Command{
 	Short: "Download a novel or volume",
 	Long:  "Download a novel or volume",
 	Run: func(cmd *cobra.Command, args []string) {
-		err := runDownloadNovel()
+		log.Println("Installing playwright")
+		err := playwright.Install(&playwright.RunOptions{
+			Browsers: []string{"chromium"},
+			Stdout:   io.Discard,
+		})
+		if err != nil {
+			log.Panicf("failed to install playwright")
+		}
+
+		err = runDownloadNovel()
 		if err != nil {
 			log.Printf("failed to download novel: %v", err)
 		}

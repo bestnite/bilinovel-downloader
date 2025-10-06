@@ -1,3 +1,4 @@
+version: 2
 project_name: bilinovel-downloader
 before:
   hooks:
@@ -12,16 +13,15 @@ builds:
     goarch:
       - amd64
       - arm64
-      - arm
       - "386"
     ldflags:
       - -s -w -X bilinovel-downloader/cmd.Version={{ .Version }}
     flags:
       - -trimpath
 archives:
-  - format: tar.gz
+  - formats: ["tar.gz"]
     format_overrides:
-      - format: zip
+      - formats: ["zip"]
         goos: windows
     wrap_in_directory: true
 release:
@@ -29,3 +29,17 @@ release:
 upx:
   - enabled: true
     compress: best
+
+nfpms:
+  - id: bilinovel-downloader
+    homepage: https://github.com/bestnite/bilinovel-downloader
+    maintainer: Nite <admin@nite07.com>
+    license: "MIT"
+    formats:
+      - apk
+      - deb
+      - rpm
+      - termux.deb
+      - archlinux
+    provides:
+      - bilinovel-downloader
