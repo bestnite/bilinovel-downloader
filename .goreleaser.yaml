@@ -2,6 +2,7 @@ version: 2
 project_name: bilinovel-downloader
 before:
   hooks:
+    - go install github.com/a-h/templ/cmd/templ@latest
     - templ generate
 builds:
   - env:
