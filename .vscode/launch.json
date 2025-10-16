@@ -23,9 +23,9 @@
       "program": "${workspaceFolder}",
       "args": [
         "download",
-        "-n=2727",
-        "-v=150098",
-        "--headless=false"
+        "-n=2388",
+        "-v=84522",
+        "--debug=true"
       ]
     }
   ]

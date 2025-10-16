@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -22,18 +22,20 @@ var downloadCmd = &cobra.Command{
 	Short: "Download a novel or volume",
 	Long:  "Download a novel or volume",
 	Run: func(cmd *cobra.Command, args []string) {
-		log.Println("Installing playwright")
+		slog.Info("Installing playwright")
 		err := playwright.Install(&playwright.RunOptions{
 			Browsers: []string{"chromium"},
 			Stdout:   io.Discard,
 		})
 		if err != nil {
-			log.Panicf("failed to install playwright")
+			slog.Error("failed to install playwright")
+			return
 		}
 
 		err = runDownloadNovel()
 		if err != nil {
-			log.Printf("failed to download novel: %v", err)
+			slog.Error("failed to download novel", slog.Any("error", err))
+			return
 		}
 	},
 }
@@ -43,8 +45,8 @@ type downloadCmdArgs struct {
 	VolumeId    int `validate:"required"`
 	outputPath  string
 	outputType  string
-	headless    bool
 	concurrency int
+	debug       bool
 }
 
 var (
@@ -56,15 +58,15 @@ func init() {
 	downloadCmd.Flags().IntVarP(&downloadArgs.VolumeId, "volume-id", "v", 0, "volume id")
 	downloadCmd.Flags().StringVarP(&downloadArgs.outputPath, "output-path", "o", "novels", "output path")
 	downloadCmd.Flags().StringVarP(&downloadArgs.outputType, "output-type", "t", "epub", "output type, epub or text")
-	downloadCmd.Flags().BoolVar(&downloadArgs.headless, "headless", true, "headless mode")
+	downloadCmd.Flags().BoolVar(&downloadArgs.debug, "debug", false, "debug mode")
 	downloadCmd.Flags().IntVar(&downloadArgs.concurrency, "concurrency", 3, "concurrency of downloading volumes")
 	RootCmd.AddCommand(downloadCmd)
 }
 
 func runDownloadNovel() error {
 	downloader, err := bilinovel.New(bilinovel.BilinovelNewOption{
-		Headless:    downloadArgs.headless,
 		Concurrency: downloadArgs.concurrency,
+		Debug:       downloadArgs.debug,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create downloader: %v", err)
@@ -72,7 +74,7 @@ func runDownloadNovel() error {
 	// 确保在函数结束时关闭资源
 	defer func() {
 		if closeErr := downloader.Close(); closeErr != nil {
-			log.Printf("Failed to close downloader: %v", closeErr)
+			slog.Info("Failed to close downloader", slog.Any("error", closeErr))
 		}
 	}()
 

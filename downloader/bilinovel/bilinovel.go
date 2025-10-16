@@ -7,7 +7,7 @@ import (
 	"crypto/sha256"
 	_ "embed"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path"
@@ -40,11 +40,13 @@ type Bilinovel struct {
 	pages          map[string]playwright.Page
 	concurrency    int
 	concurrentChan chan any
+
+	logger *slog.Logger
 }
 
 type BilinovelNewOption struct {
-	Headless    bool
 	Concurrency int
+	Debug       bool
 }
 
 func New(option BilinovelNewOption) (*Bilinovel, error) {
@@ -54,6 +56,17 @@ func New(option BilinovelNewOption) (*Bilinovel, error) {
 	}
 	restyClient := utils.NewRestyClient(50)
 
+	var logLevel slog.Level
+	if option.Debug {
+		logLevel = slog.LevelDebug
+	} else {
+		logLevel = slog.LevelInfo
+	}
+
+	handlerOptions := &slog.HandlerOptions{
+		Level: logLevel,
+	}
+
 	b := &Bilinovel{
 		fontMapper:     fontMapper,
 		textOnly:       false,
@@ -61,10 +74,11 @@ func New(option BilinovelNewOption) (*Bilinovel, error) {
 		pages:          make(map[string]playwright.Page),
 		concurrency:    option.Concurrency,
 		concurrentChan: make(chan any, option.Concurrency),
+		logger:         slog.New(slog.NewTextHandler(os.Stdout, handlerOptions)),
 	}
 
 	// 初始化浏览器实例
-	err = b.initBrowser(option.Headless)
+	err = b.initBrowser(option.Debug)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init browser: %v", err)
 	}
@@ -81,13 +95,15 @@ func (b *Bilinovel) GetExtraFiles() []model.ExtraFile {
 }
 
 // initBrowser 初始化浏览器实例
-func (b *Bilinovel) initBrowser(headless bool) error {
+func (b *Bilinovel) initBrowser(debug bool) error {
 	pw, err := playwright.Run()
 	if err != nil {
 		return fmt.Errorf("could not start playwright: %w", err)
 	}
+
 	b.browser, err = pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(headless),
+		Headless: playwright.Bool(!debug),
+		Devtools: playwright.Bool(debug),
 	})
 	if err != nil {
 		return fmt.Errorf("could not launch browser: %w", err)
@@ -98,7 +114,7 @@ func (b *Bilinovel) initBrowser(headless bool) error {
 		return fmt.Errorf("could not create browser context: %w", err)
 	}
 
-	log.Println("Browser initialized successfully")
+	b.logger.Info("Browser initialized successfully")
 	return nil
 }
 
@@ -106,7 +122,7 @@ func (b *Bilinovel) initBrowser(headless bool) error {
 func (b *Bilinovel) Close() error {
 	if b.browser != nil {
 		if err := b.browser.Close(); err != nil {
-			log.Printf("could not close browser: %v", err)
+			b.logger.Error("could not close browser", slog.Any("error", err))
 		}
 		b.browser = nil
 		b.browserContext = nil
@@ -122,7 +138,7 @@ func (b *Bilinovel) GetStyleCSS() string {
 }
 
 func (b *Bilinovel) GetNovel(novelId int, skipChapterContent bool, skipVolumes []int) (*model.Novel, error) {
-	log.Printf("Getting novel %v\n", novelId)
+	b.logger.Info("Getting novel", slog.Int("novelId", novelId))
 
 	novelUrl := fmt.Sprintf("https://www.bilinovel.com/novel/%v.html", novelId)
 	resp, err := b.restyClient.R().Get(novelUrl)
@@ -161,7 +177,7 @@ func (b *Bilinovel) GetNovel(novelId int, skipChapterContent bool, skipVolumes [
 }
 
 func (b *Bilinovel) GetVolume(novelId int, volumeId int, skipChapterContent bool) (*model.Volume, error) {
-	log.Printf("Getting volume %v of novel %v\n", volumeId, novelId)
+	b.logger.Info("Getting volume of novel", slog.Int("volumeId", volumeId), slog.Int("novelId", novelId))
 
 	novelUrl := fmt.Sprintf("https://www.bilinovel.com/novel/%v/catalog", novelId)
 	resp, err := b.restyClient.R().Get(novelUrl)
@@ -259,7 +275,7 @@ func (b *Bilinovel) GetVolume(novelId int, volumeId int, skipChapterContent bool
 }
 
 func (b *Bilinovel) getAllVolumes(novelId int, skipChapterContent bool, skipVolumes []int) ([]*model.Volume, error) {
-	log.Printf("Getting all volumes of novel %v\n", novelId)
+	b.logger.Info("Getting all volumes of novel", slog.Int("novelId", novelId))
 
 	catelogUrl := fmt.Sprintf("https://www.bilinovel.com/novel/%v/catalog", novelId)
 	resp, err := b.restyClient.R().Get(catelogUrl)
@@ -300,7 +316,7 @@ func (b *Bilinovel) getAllVolumes(novelId int, skipChapterContent bool, skipVolu
 
 			volumeId, err := strconv.Atoi(volumeIdStr)
 			if err != nil {
-				log.Printf("failed to convert volume id %s: %v", volumeIdStr, err)
+				b.logger.Error("failed to convert volume id", slog.String("volumeIdStr", volumeIdStr), slog.Any("error", err))
 				return
 			}
 			if slices.Contains(skipVolumes, volumeId) {
@@ -308,7 +324,7 @@ func (b *Bilinovel) getAllVolumes(novelId int, skipChapterContent bool, skipVolu
 			}
 			volume, err := b.GetVolume(novelId, volumeId, skipChapterContent)
 			if err != nil {
-				log.Printf("failed to get volume info for novel %d, volume %d: %v", novelId, volumeId, err)
+				b.logger.Error("failed to get volume info", slog.Int("novelId", novelId), slog.Int("volumeId", volumeId), slog.Any("error", err))
 				return
 			}
 			volume.SeriesIdx = i
@@ -340,7 +356,7 @@ func (b *Bilinovel) getAllVolumes(novelId int, skipChapterContent bool, skipVolu
 }
 
 func (b *Bilinovel) GetChapter(novelId int, volumeId int, chapterId int) (*model.Chapter, error) {
-	log.Printf("Getting chapter %v of novel %v\n", chapterId, novelId)
+	b.logger.Info("Getting chapter of novel", slog.Int("chapterId", chapterId), slog.Int("novelId", novelId))
 
 	pageNum := 1
 	chapter := &model.Chapter{
@@ -370,8 +386,11 @@ func (b *Bilinovel) GetChapter(novelId int, volumeId int, chapterId int) (*model
 	return chapter, nil
 }
 
+var nextPageUrlRegexp = regexp.MustCompile(`url_next:\s?['"]([^'"]*?)['"]`)
+var cleanNextPageUrlRegexp = regexp.MustCompile(`(_\d+)?\.html$`)
+
 func (b *Bilinovel) getChapterByPage(pwPage playwright.Page, chapter *model.Chapter, pageNum int) (bool, error) {
-	log.Printf("Getting chapter %v by page %v\n", chapter.Id, pageNum)
+	b.logger.Info("Getting chapter by page", slog.Int("chapter", chapter.Id), slog.Int("page", pageNum))
 
 	Url := strings.TrimSuffix(chapter.Url, ".html") + fmt.Sprintf("_%v.html", pageNum)
 
@@ -405,6 +424,17 @@ func (b *Bilinovel) getChapterByPage(pwPage playwright.Page, chapter *model.Chap
 		return false, fmt.Errorf("failed to parse html: %w", err)
 	}
 
+	// 判断章节是否有下一页
+	n := nextPageUrlRegexp.FindStringSubmatch(resortedHtml)
+	if len(n) != 2 {
+		return false, fmt.Errorf("failed to determine wether there is a next page")
+	}
+
+	s := cleanNextPageUrlRegexp.ReplaceAllString(n[1], "")
+	if strings.Contains(Url, s) {
+		hasNext = true
+	}
+
 	if pageNum == 1 {
 		chapter.Title = doc.Find("#atitle").Text()
 	}
@@ -413,7 +443,7 @@ func (b *Bilinovel) getChapterByPage(pwPage playwright.Page, chapter *model.Chap
 	content.Find("center").Remove()
 	content.Find(".google-auto-placed").Remove()
 
-	if strings.Contains(resp.String(), `font-family: "read"`) {
+	if strings.Contains(resortedHtml, `font-family: "read"`) {
 		html, err := content.Find("p").Last().Html()
 		if err != nil {
 			return false, fmt.Errorf("failed to get html: %v", err)
@@ -486,7 +516,7 @@ func (b *Bilinovel) getChapterByPage(pwPage playwright.Page, chapter *model.Chap
 }
 
 func (b *Bilinovel) getImg(url string) ([]byte, error) {
-	log.Printf("Getting img %v\n", url)
+	b.logger.Info("Getting img", slog.String("url", url))
 	resp, err := b.restyClient.R().SetHeader("Referer", "https://www.bilinovel.com").Get(url)
 	if err != nil {
 		return nil, err
@@ -497,7 +527,15 @@ func (b *Bilinovel) getImg(url string) ([]byte, error) {
 
 // processContentWithPlaywright 使用复用的浏览器实例处理内容
 func (b *Bilinovel) processContentWithPlaywright(page playwright.Page, htmlContent string) (string, error) {
-	tempFile, err := os.CreateTemp("", "bilinovel-temp-*.html")
+	// 替换 window.location.replace，防止页面跳转
+	htmlContent = strings.ReplaceAll(htmlContent, "window.location.replace", "console.log")
+
+	tempPath := filepath.Join(os.TempDir(), "bilinovel-downloader")
+	err := os.MkdirAll(tempPath, 0755)
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	tempFile, err := os.CreateTemp(tempPath, "temp-*.html")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
@@ -510,6 +548,34 @@ func (b *Bilinovel) processContentWithPlaywright(page playwright.Page, htmlConte
 	tempFile.Close()
 	tempFilePath := tempFile.Name()
 
+	// // 屏蔽请求
+	// googleAdsDomains := []string{
+	// 	"adtrafficquality.google",
+	// 	"doubleclick.net",
+	// 	"googlesyndication.com",
+	// 	"googletagmanager.com",
+	// 	"hm.baidu.com",
+	// 	"cloudflareinsights.com",
+	// 	"fsdoa.js",                         // adblock 检测
+	// 	"https://www.linovelib.com/novel/", // 阻止从本地文件跳转到在线页面
+	// }
+	// err = page.Route("**/*", func(route playwright.Route) {
+	// 	for _, d := range googleAdsDomains {
+	// 		if strings.Contains(route.Request().URL(), d) {
+	// 			b.logger.Debug("blocking request", slog.String("url", route.Request().URL()))
+	// 			err := route.Abort("aborted")
+	// 			if err != nil {
+	// 				b.logger.Debug("failed to block request", route.Request().URL(), err)
+	// 			}
+	// 			return
+	// 		}
+	// 	}
+	// 	_ = route.Continue()
+	// })
+	// if err != nil {
+	// 	return "", fmt.Errorf("failed to intercept requests: %w", err)
+	// }
+
 	_, err = page.ExpectResponse(func(url string) bool {
 		return strings.Contains(url, "chapterlog.js")
 	}, func() error {
@@ -519,14 +585,15 @@ func (b *Bilinovel) processContentWithPlaywright(page playwright.Page, htmlConte
 		}
 		return nil
 	}, playwright.PageExpectResponseOptions{
-		Timeout: playwright.Float(5000),
+		Timeout: playwright.Float(10000),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to wait for network request finish")
 	}
 
 	err = page.Locator("#acontent").WaitFor(playwright.LocatorWaitForOptions{
-		State: playwright.WaitForSelectorStateVisible,
+		State:   playwright.WaitForSelectorStateVisible,
+		Timeout: playwright.Float(10000),
 	})
 	if err != nil {
 		return "", fmt.Errorf("could not wait for #acontent: %w", err)
@@ -562,7 +629,7 @@ func (b *Bilinovel) processContentWithPlaywright(page playwright.Page, htmlConte
 		return "", fmt.Errorf("failed to remove hidden elements: %w", err)
 	}
 
-	log.Printf("Hidden elements removal result: %s", result)
+	b.logger.Debug("Hidden elements removal result", slog.Any("count", result))
 
 	processedHTML, err := page.Content()
 	if err != nil {
