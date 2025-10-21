@@ -22,3 +22,8 @@
    ```bash
    bilinovel-downloader pack -d <目录路径>
    ```
+
+## 算法分析
+
+目前程序使用 playwright 进行爬取来规避 bilinovel 的反爬（诱饵段落和段落重排）策略。  
+但是依然对 bilinovel 的算法进行了简单的分析，具体可以参考[代码](./test/no_playwright_method_test.go)，这个代码目前是可行的，但如果 bilinovel 频繁更改初始化种子的计算方式或算法的实现，会让排序方法失效，这也是为什么目前程序使用 playwright。
