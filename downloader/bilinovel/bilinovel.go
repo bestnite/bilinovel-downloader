@@ -18,8 +18,8 @@ import (
 	"strings"
 	"sync"
 
+	mapper "git.nite07.com/nite/font-mapper"
 	"github.com/PuerkitoBio/goquery"
-	mapper "github.com/bestnite/font-mapper"
 	"github.com/playwright-community/playwright-go"
 )
 

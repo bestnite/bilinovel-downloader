@@ -1,11 +1,11 @@
+git.nite07.com/nite/font-mapper v0.0.0-20251029075022-4bbc206d648b h1:hK/0jdxebP97k2kDrUxPhWc5NBcS4syGmyBS9Ei8nYQ=
+git.nite07.com/nite/font-mapper v0.0.0-20251029075022-4bbc206d648b/go.mod h1:RSjujtYGm7TmkJBJewhvCmfjj9FyYdDWoJyremwMxfU=
 github.com/PuerkitoBio/goquery v1.10.3 h1:pFYcNSqHxBD06Fpj/KsbStFRsgRATgnf3LeXiUkhzPo=
 github.com/PuerkitoBio/goquery v1.10.3/go.mod h1:tMUX0zDMHXYlAQk6p35XxQMqMweEKB7iK7iLNd4RH4Y=
 github.com/a-h/templ v0.3.943 h1:o+mT/4yqhZ33F3ootBiHwaY4HM5EVaOJfIshvd5UNTY=
 github.com/a-h/templ v0.3.943/go.mod h1:oCZcnKRf5jjsGpf2yELzQfodLphd2mwecwG4Crk5HBo=
 github.com/andybalholm/cascadia v1.3.3 h1:AG2YHrzJIm4BZ19iwJ/DAua6Btl3IwJX+VI4kktS1LM=
 github.com/andybalholm/cascadia v1.3.3/go.mod h1:xNd9bqTn98Ln4DwST8/nG+H0yuB8Hmgu1YHNnWw0GeA=
-github.com/bestnite/font-mapper v0.0.0-20250823155658-56c76d820267 h1:nmUTJV2u/0XmVjQ++VIy/Hu+MtxdpQvOevvcSZtUATA=
-github.com/bestnite/font-mapper v0.0.0-20250823155658-56c76d820267/go.mod h1:cfB1e9YhoI/QWrXPp3h6QVAKU6iCI2ifbjRPHP3xf/0=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=

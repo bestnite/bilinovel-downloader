@@ -3,9 +3,9 @@ module bilinovel-downloader
 go 1.24.2
 
 require (
+	git.nite07.com/nite/font-mapper v0.0.0-20251029075022-4bbc206d648b
 	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/a-h/templ v0.3.943
-	github.com/bestnite/font-mapper v0.0.0-20250823155658-56c76d820267
 	github.com/go-resty/resty/v2 v2.16.5
 	github.com/google/uuid v1.6.0
 	github.com/playwright-community/playwright-go v0.5200.1
