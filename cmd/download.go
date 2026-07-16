@@ -13,7 +13,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/playwright-community/playwright-go"
+	"github.com/mxschmitt/playwright-go"
 	"github.com/spf13/cobra"
 )
 
@@ -28,7 +28,7 @@ var downloadCmd = &cobra.Command{
 			Stdout:   io.Discard,
 		})
 		if err != nil {
-			slog.Error("failed to install playwright")
+			slog.Error("failed to install playwright", slog.Any("error", err))
 			return
 		}
 

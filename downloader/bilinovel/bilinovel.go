@@ -20,7 +20,7 @@ import (
 
 	mapper "git.nite07.com/nite/font-mapper"
 	"github.com/PuerkitoBio/goquery"
-	"github.com/playwright-community/playwright-go"
+	"github.com/mxschmitt/playwright-go"
 )
 
 //go:embed read.ttf
@@ -101,10 +101,13 @@ func (b *Bilinovel) initBrowser(debug bool) error {
 		return fmt.Errorf("could not start playwright: %w", err)
 	}
 
-	b.browser, err = pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
+	launchOpts := playwright.BrowserTypeLaunchOptions{
 		Headless: playwright.Bool(!debug),
-		Devtools: playwright.Bool(debug),
-	})
+	}
+	if debug {
+		launchOpts.Args = []string{"--auto-open-devtools-for-tabs"}
+	}
+	b.browser, err = pw.Chromium.Launch(launchOpts)
 	if err != nil {
 		return fmt.Errorf("could not launch browser: %w", err)
 	}
@@ -529,6 +532,10 @@ func (b *Bilinovel) getImg(url string) ([]byte, error) {
 func (b *Bilinovel) processContentWithPlaywright(page playwright.Page, htmlContent string) (string, error) {
 	// 替换 window.location.replace，防止页面跳转
 	htmlContent = strings.ReplaceAll(htmlContent, "window.location.replace", "console.log")
+
+	// 将绝对路径的资源引用替换为完整 URL，以便从 file:// 加载时能正确请求远程资源
+	htmlContent = strings.ReplaceAll(htmlContent, `src="/`, `src="https://www.bilinovel.com/`)
+	htmlContent = strings.ReplaceAll(htmlContent, `href="/`, `href="https://www.bilinovel.com/`)
 
 	tempPath := filepath.Join(os.TempDir(), "bilinovel-downloader")
 	err := os.MkdirAll(tempPath, 0755)

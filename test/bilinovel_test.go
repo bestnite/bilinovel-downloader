@@ -9,10 +9,10 @@ import (
 
 func TestBilinovel_GetNovel(t *testing.T) {
 	bilinovel, err := bilinovel.New(bilinovel.BilinovelNewOption{Concurrency: 5})
-	bilinovel.SetTextOnly(true)
 	if err != nil {
 		t.Fatalf("failed to create bilinovel: %v", err)
 	}
+	bilinovel.SetTextOnly(true)
 	novel, err := bilinovel.GetNovel(2727, false, nil)
 	if err != nil {
 		t.Fatalf("failed to get novel: %v", err)
@@ -26,10 +26,10 @@ func TestBilinovel_GetNovel(t *testing.T) {
 
 func TestBilinovel_GetVolume(t *testing.T) {
 	bilinovel, err := bilinovel.New(bilinovel.BilinovelNewOption{Concurrency: 1})
-	bilinovel.SetTextOnly(true)
 	if err != nil {
 		t.Fatalf("failed to create bilinovel: %v", err)
 	}
+	bilinovel.SetTextOnly(true)
 	volume, err := bilinovel.GetVolume(2727, 129092, false)
 	if err != nil {
 		t.Fatalf("failed to get volume: %v", err)
@@ -43,10 +43,10 @@ func TestBilinovel_GetVolume(t *testing.T) {
 
 func TestBilinovel_GetChapter(t *testing.T) {
 	bilinovel, err := bilinovel.New(bilinovel.BilinovelNewOption{Concurrency: 1})
-	bilinovel.SetTextOnly(true)
 	if err != nil {
 		t.Fatalf("failed to create bilinovel: %v", err)
 	}
+	bilinovel.SetTextOnly(true)
 	chapter, err := bilinovel.GetChapter(2727, 129092, 129094)
 	if err != nil {
 		t.Fatalf("failed to get chapter: %v", err)
