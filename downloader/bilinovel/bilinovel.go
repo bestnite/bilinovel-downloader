@@ -266,8 +266,7 @@ func (b *Bilinovel) GetVolume(novelId int, volumeId int, skipChapterContent bool
 				if err != nil {
 					return nil, fmt.Errorf("failed to get chapter: %v", err)
 				}
-				chapter.Id = chapterId
-				volume.Chapters[i] = chapter
+				volume.Chapters[i] = mergeDownloadedChapter(volume.Chapters[i], chapter)
 			} else {
 				return nil, fmt.Errorf("failed to get chapter id: %v", volume.Chapters[i].Url)
 			}
@@ -275,6 +274,12 @@ func (b *Bilinovel) GetVolume(novelId int, volumeId int, skipChapterContent bool
 	}
 
 	return volume, nil
+}
+
+func mergeDownloadedChapter(listedChapter, downloadedChapter *model.Chapter) *model.Chapter {
+	downloadedChapter.Title = listedChapter.Title
+	downloadedChapter.Url = listedChapter.Url
+	return downloadedChapter
 }
 
 func (b *Bilinovel) getAllVolumes(novelId int, skipChapterContent bool, skipVolumes []int) ([]*model.Volume, error) {
@@ -442,9 +447,7 @@ func (b *Bilinovel) getChapterByPage(pwPage playwright.Page, chapter *model.Chap
 		chapter.Title = doc.Find("#atitle").Text()
 	}
 	content := doc.Find("#acontent").First()
-	content.Find(".cgo").Remove()
-	content.Find("center").Remove()
-	content.Find(".google-auto-placed").Remove()
+	cleanChapterContent(content)
 
 	if strings.Contains(resortedHtml, `font-family: "read"`) {
 		html, err := content.Find("p").Last().Html()
@@ -516,6 +519,11 @@ func (b *Bilinovel) getChapterByPage(pwPage playwright.Page, chapter *model.Chap
 	chapter.Content.Html += strings.TrimSpace(htmlStr)
 
 	return hasNext, nil
+}
+
+func cleanChapterContent(content *goquery.Selection) {
+	content.Find(".cgo, .csgo, .co, .google-auto-placed, ins.adsbygoogle").Remove()
+	content.Find("center").Remove()
 }
 
 func (b *Bilinovel) getImg(url string) ([]byte, error) {
